@@ -17,8 +17,6 @@
 
 int n, n_sqrt;
 
-typedef std::vector<std::pair<std::pair<int, int>, std::vector<int>>> cell_info ;
-
 enum CheckType {
     ROW,
     COLUMN,
@@ -312,44 +310,53 @@ bool compareGrid(int **a, int **b) {
     return true;
 }
 
-bool bruteForceSearch(int **grid, cell_info &yolo, size_t offset) {
+bool isSafe(int **grid, int row,
+                       int col, int num)
+{
+    for (int x = 0; x <= 8; x++)
+        if (grid[row][x] == num)
+            return false;
 
-    if (offset >= yolo.size()) {
-        if (isSolved(grid)) {
-            return true;
-        }
-        return false;
-    }
+    for (int x = 0; x <= 8; x++)
+        if (grid[x][col] == num)
+            return false;
 
-    for (auto option : yolo[offset].second) {
-        grid[yolo[offset].first.first][yolo[offset].first.second] = option;
-        bool child_ret = bruteForceSearch(grid, yolo, offset + 1);
-        if (child_ret)
-            return true;
-    }
-    return false;
+    int startRow = row - row % 3;
+    int startCol = col - col % 3;
+
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 3; j++)
+            if (grid[i + startRow][j +
+                            startCol] == num)
+                return false;
+
+    return true;
 }
 
-void bruteForce(int **grid)
+bool solveSuduko(int **grid, int row, int col)
 {
-    int **mask_grid = createGrid();
-    availabilityGrid(grid, mask_grid);
+    if (row == n - 1 && col == n)
+        return true;
 
-    cell_info yolo;
-
-    for (int i = 0; i < n; i++)
-    {
-        for (int j = 0; j < n; j++) {
-            if (mask_grid[i][j] != 0)
-                yolo.push_back({{i, j}, getSetBits(mask_grid[i][j])});
-        }
+    if (col == n) {
+        row++;
+        col = 0;
     }
+    if (grid[row][col] > 0)
+        return solveSuduko(grid, row, col + 1);
 
-    if (bruteForceSearch(grid, yolo, 0))
-        std::cout << "solved" << std::endl;
-    else
-        std::cout << "fok" << std::endl;
-    destroyGrid(mask_grid);
+    for (int num = 1; num <= 9; num++)
+    {
+        if (isSafe(grid, row, col, num))
+        {
+            grid[row][col] = num;
+
+            if (solveSuduko(grid, row, col + 1))
+                return true;
+        }
+        grid[row][col] = 0;
+    }
+    return false;
 }
 
 int main(int argc, char **argv)
@@ -381,10 +388,11 @@ int main(int argc, char **argv)
             copyGrid(grid_new, grid);
             loneRanger(grid);
         }
-        elimination(grid);
     }
 
-    bruteForce(grid);
+    if (!solveSuduko(grid, 0, 0))
+        std::cout << "no solution  exists " << std::endl;
+
     clock_t end  = clock();
 
     print(grid);
