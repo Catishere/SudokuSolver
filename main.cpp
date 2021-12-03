@@ -4,9 +4,11 @@
 #include <sstream>
 #include <cmath>
 #include <thread>
+#include <mutex>
 #include <vector>
 #include <bitset>
 #include <cstring>
+#include <iomanip>
 
 #define SET_BIT(mask, n) if (n != 0) mask |= 1UL << (n - 1)
 #define UNSET_BIT(mask, n) (mask &= ~(1UL << (n)))
@@ -23,7 +25,7 @@ enum CheckType {
     MINIGRID
 };
 
-void print(int **arr)
+void print(uint32_t **arr)
 {
     for (int i = 0; i < n; i++)
     {
@@ -32,7 +34,7 @@ void print(int **arr)
         for (int j = 0; j < n; j++) {
             if (j % n_sqrt == 0)
                 std::cout << "| ";
-            std::cout << arr[i][j] << " ";
+            std::cout << std::setw(2) <<  std::left << arr[i][j] << " ";
         }
         std::cout << std::endl;
     }
@@ -42,17 +44,17 @@ static inline int log2i(int x) {
     return sizeof(int) * 8 - __builtin_clz(x) - 1;
 }
 
-int** createGrid()
+uint32_t** createGrid()
 {
-    int **grid = new int*[n];
+    uint32_t **grid = new uint32_t*[n];
     for (int i = 0; i < n; ++i)
     {
-        grid[i] = new int[n]();
+        grid[i] = new uint32_t[n]();
     }
     return grid;
 }
 
-void destroyGrid(int **grid)
+void destroyGrid(uint32_t **grid)
 {
     for (int i = 0; i < n; ++i)
     {
@@ -61,13 +63,13 @@ void destroyGrid(int **grid)
     delete [] grid;
 }
 
-void elimination(int **grid) {
+void elimination(uint32_t **grid) {
     for (int r = 0; r < n; ++r) {
         for (int c = 0; c < n; ++c) {
             if (grid[r][c] != 0)
                 continue;
 
-            int mask = N_ONES;
+            uint32_t mask = N_ONES;
             int mini_r = r - r % n_sqrt;
             int mini_c = c - c % n_sqrt;
 
@@ -91,23 +93,23 @@ void elimination(int **grid) {
     }
 }
 
-static inline void toggle_block(int &mask, int grid_mask, int &filter) {
+static inline void toggle_block(uint32_t &mask, uint32_t grid_mask, uint32_t &filter) {
     if (grid_mask == 0)
         return;
-    int new_mask = ~(~mask ^ ~grid_mask); // xnor stack new, exclude repetitives
+    uint32_t new_mask = ~(~mask ^ ~grid_mask); // xnor stack new, exclude repetitives
     filter |= ~mask & ~grid_mask; // 1 if bit is excluded
     filter &= N_ONES;
     mask = new_mask | filter;
     mask &= N_ONES;
 }
 
-void availabilityGrid(int **grid, int **mask_grid) {
+void availabilityGrid(uint32_t **grid, uint32_t **mask_grid) {
     for (int r = 0; r < n; ++r) {
         for (int c = 0; c < n; ++c) {
             if (grid[r][c] != 0)
                 continue;
 
-            int mask = 0;
+            uint32_t mask = 0;
             int mini_r = r - r % n_sqrt;
             int mini_c = c - c % n_sqrt;
 
@@ -129,9 +131,9 @@ void availabilityGrid(int **grid, int **mask_grid) {
     }
 }
 
-uint32_t countSetBits(uint32_t num)
+int countSetBits(int num)
 {
-    unsigned int count = 0;
+    int count = 0;
     while (num) {
         count += num & 1;
         num >>= 1;
@@ -139,7 +141,7 @@ uint32_t countSetBits(uint32_t num)
     return count;
 }
 
-std::vector<int> getSetBits(int num) {
+std::vector<int> getSetBits(uint32_t num) {
     std::vector<int> result;
     for (int i = 0; num; ++i) {
         if (~num & 1)
@@ -149,11 +151,11 @@ std::vector<int> getSetBits(int num) {
     return result;
 }
 
-int twins(int **mask_grid, int r, int c, CheckType type) {
+uint32_t twins(uint32_t **mask_grid, int r, int c, CheckType type) {
 
     int mini_r = r - r % n_sqrt;
     int mini_c = c - c % n_sqrt;
-    uint32_t counter = 0;
+    int counter = 0;
 
     switch (type) {
     case ROW:
@@ -178,13 +180,15 @@ int twins(int **mask_grid, int r, int c, CheckType type) {
         break;
     }
 
-    if (countSetBits(mask_grid[r][c]) == counter && (counter == 2 || counter == 3))
+    if (countSetBits(mask_grid[r][c]) == counter
+            && counter > 1
+            && counter < n)
         return mask_grid[r][c];
     return 0;
 }
 
-void loneRanger(int **grid) {
-    int **mask_grid = createGrid();
+void loneRanger(uint32_t **grid) {
+    uint32_t **mask_grid = createGrid();
     availabilityGrid(grid, mask_grid);
 
     for (int r = 0; r < n; ++r) {
@@ -192,8 +196,8 @@ void loneRanger(int **grid) {
             if (grid[r][c] != 0)
                 continue;
 
-            int mask = N_ONES;
-            int filter = twins(mask_grid, r, c, ROW);
+            uint32_t mask = N_ONES;
+            uint32_t filter = twins(mask_grid, r, c, ROW);
             int mini_r = r - r % n_sqrt;
             int mini_c = c - c % n_sqrt;
 
@@ -238,48 +242,7 @@ void loneRanger(int **grid) {
     destroyGrid(mask_grid);
 }
 
-bool isSolved(int **grid) {
-
-    for (int r = 0; r < n; ++r) {
-        for (int c = 0; c < n; ++c) {
-
-            uint32_t mask = 0;
-            int mini_r = r - r % n_sqrt;
-            int mini_c = c - c % n_sqrt;
-
-            for (int i = 0; i < n; ++i) {
-                SET_BIT(mask, grid[i][c]);
-            }
-
-            if (mask != N_ONES)
-                return false;
-
-            mask = 0;
-
-            for (int i = 0; i < n; ++i) {
-                SET_BIT(mask, grid[r][i]);
-            }
-
-            if (mask != N_ONES)
-                return false;
-
-
-            mask = 0;
-
-            for (int i = mini_r; i < mini_r + n_sqrt; ++i) {
-                for (int j = mini_c; j < mini_c + n_sqrt; ++j) {
-                    SET_BIT(mask, grid[i][j]);
-                }
-            }
-
-            if (mask != N_ONES)
-                return false;
-        }
-    }
-    return true;
-}
-
-void populateGrid(int **grid)
+void populateGrid(uint32_t **grid)
 {
     std::stringstream ss;
     ss << "sudoku" << n << ".txt";
@@ -287,12 +250,12 @@ void populateGrid(int **grid)
     for (int i = 0; i < n; i++)
     {
         for (int j = 0; j < n; j++) {
-            scin >> std::hex >> grid[i][j];
+            scin >> grid[i][j];
         }
     }
 }
 
-void copyGrid(int **dest, int **src) {
+void copyGrid(uint32_t **dest, uint32_t **src) {
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
             dest[i][j] = src[i][j];
@@ -300,7 +263,7 @@ void copyGrid(int **dest, int **src) {
     }
 }
 
-bool compareGrid(int **a, int **b) {
+bool compareGrid(uint32_t **a, uint32_t **b) {
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
             if (a[i][j] != b[i][j])
@@ -310,30 +273,28 @@ bool compareGrid(int **a, int **b) {
     return true;
 }
 
-bool isSafe(int **grid, int row,
-                       int col, int num)
+bool isSafe(uint32_t **grid, int row, int col, uint32_t num)
 {
-    for (int x = 0; x <= 8; x++)
+    for (int x = 0; x <= n - 1; x++)
         if (grid[row][x] == num)
             return false;
 
-    for (int x = 0; x <= 8; x++)
+    for (int x = 0; x <= n - 1; x++)
         if (grid[x][col] == num)
             return false;
 
-    int startRow = row - row % 3;
-    int startCol = col - col % 3;
+    int startRow = row - row % n_sqrt;
+    int startCol = col - col % n_sqrt;
 
-    for (int i = 0; i < 3; i++)
-        for (int j = 0; j < 3; j++)
-            if (grid[i + startRow][j +
-                            startCol] == num)
+    for (int i = 0; i < n_sqrt; i++)
+        for (int j = 0; j < n_sqrt; j++)
+            if (grid[i + startRow][j + startCol] == num)
                 return false;
 
     return true;
 }
 
-bool solveSuduko(int **grid, int row, int col)
+bool solveSuduko(uint32_t **grid, int row, int col)
 {
     if (row == n - 1 && col == n)
         return true;
@@ -345,7 +306,7 @@ bool solveSuduko(int **grid, int row, int col)
     if (grid[row][col] > 0)
         return solveSuduko(grid, row, col + 1);
 
-    for (int num = 1; num <= 9; num++)
+    for (int num = 1; num <= n; num++)
     {
         if (isSafe(grid, row, col, num))
         {
@@ -375,8 +336,8 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    int **grid = createGrid();
-    int **grid_new = createGrid();
+    uint32_t **grid = createGrid();
+    uint32_t **grid_new = createGrid();
     populateGrid(grid);
 
     clock_t start = clock();
@@ -384,16 +345,14 @@ int main(int argc, char **argv)
     while (!compareGrid(grid, grid_new)) {
         copyGrid(grid_new, grid);
         loneRanger(grid);
-        while (!compareGrid(grid, grid_new)) {
-            copyGrid(grid_new, grid);
-            loneRanger(grid);
-        }
     }
 
-    if (!solveSuduko(grid, 0, 0))
-        std::cout << "no solution  exists " << std::endl;
+    auto ret = solveSuduko(grid, 0, 0);
 
     clock_t end  = clock();
+
+    if (!ret)
+        std::cout << "no solution  exists " << std::endl;
 
     print(grid);
     destroyGrid(grid);
