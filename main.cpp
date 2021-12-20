@@ -30,13 +30,13 @@ void print(uint32_t **arr)
     for (int i = 0; i < n; i++)
     {
         if (i % n_sqrt == 0)
-            std::cout << std::string(n * 2 + 6, '-') << std::endl;
+            std::cout << std::string(n * 2 + 6, '-') << '\n';
         for (int j = 0; j < n; j++) {
             if (j % n_sqrt == 0)
                 std::cout << "| ";
             std::cout << std::setw(2) <<  std::left << arr[i][j] << " ";
         }
-        std::cout << std::endl;
+        std::cout << '\n';
     }
 }
 
