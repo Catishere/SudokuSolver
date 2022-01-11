@@ -461,11 +461,13 @@ int main(int argc, char **argv)
     populateGrid(grid);
     clock_t start = clock();
 
+#ifdef OPTIMIZED
     elimination(grid);
     while (!compareGrid(grid, grid_new)) {
         copyGrid(grid_new, grid);
         loneRanger(grid);
     }
+#endif
 
 #ifdef MULTITHREAD
     std::stack<uint32_t **> stack;
