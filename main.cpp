@@ -5,19 +5,25 @@
 #include <cmath>
 #include <thread>
 #include <mutex>
+#include <stack>
 #include <vector>
 #include <bitset>
 #include <cstring>
 #include <iomanip>
 
+#define MULTITHREAD 1
 #define SET_BIT(mask, n) if (n != 0) mask |= 1UL << (n - 1)
 #define UNSET_BIT(mask, n) (mask &= ~(1UL << (n)))
 #define CHECK_BIT(mask, n) ((mask >> (n)) & 1U)
 #define IS_POWER_OF_2(mask) ((mask != 0) && ((mask & (mask - 1)) == 0))
 #define IMP(a, b) (~b | a)
 #define N_ONES ((1UL << n) - 1)
+#define COUNTER_SIZE 7
 
 int n, n_sqrt;
+bool terminate = false;
+uint32_t** solution = NULL;
+std::mutex stack_lock;
 
 enum CheckType {
     ROW,
@@ -81,8 +87,8 @@ void elimination(uint32_t **grid) {
                 UNSET_BIT(mask, grid[r][i]);
             }
 
-            for (int i = mini_r; i < n_sqrt; ++i) {
-                for (int j = mini_c; j < n_sqrt; ++j) {
+            for (int i = mini_r; i < mini_r + n_sqrt; ++i) {
+                for (int j = mini_c; j < mini_c + n_sqrt; ++j) {
                     UNSET_BIT(mask, grid[i][j]);
                 }
             }
@@ -143,7 +149,7 @@ int countSetBits(int num)
 
 std::vector<int> getSetBits(uint32_t num) {
     std::vector<int> result;
-    for (int i = 0; num; ++i) {
+    for (int i = 0; i < n; ++i) {
         if (~num & 1)
             result.push_back(i + 1);
         num >>= 1;
@@ -320,12 +326,126 @@ bool solveSuduko(uint32_t **grid, int row, int col)
     return false;
 }
 
+void prepareStack(uint32_t **grid, std::stack<uint32_t **>& stack) {
+
+    uint32_t **mask_grid = createGrid();
+    size_t counters[COUNTER_SIZE] = {0};
+
+    availabilityGrid(grid, mask_grid);
+
+    std::vector<std::pair<std::pair<int, int>, std::vector<int>>> positions;
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            if (mask_grid[i][j] == 0)
+                continue;
+            positions.push_back({{i, j}, getSetBits(mask_grid[i][j])});
+        }
+    }
+
+    int yolo = 0;
+    while (true) {
+        yolo++;
+        uint32_t **copy = createGrid();
+        copyGrid(copy, grid);
+        for (size_t i = 0; i < COUNTER_SIZE; ++i) {
+            const auto& position = positions[i];
+            copy[position.first.first][position.first.second] = position.second[counters[i]];
+        }
+        stack.push(copy);
+        counters[0]++;
+        if (counters[0] >= positions[0].second.size()) {
+            counters[0] = 0;
+            int temp_index = 1;
+            counters[temp_index]++;
+            while (counters[temp_index] >= positions[temp_index].second.size()) {
+                counters[temp_index] = 0;
+                temp_index++;
+                if (temp_index >= COUNTER_SIZE)
+                    return;
+                counters[temp_index]++;
+            }
+        }
+    }
+}
+
+
+bool isValid(uint32_t **grid)
+{
+    for (int r = 0; r < n; ++r) {
+        for (int c = 0; c < n; ++c) {
+            if (grid[r][c] == 0)
+                continue;
+
+            uint32_t mask = N_ONES;
+            int mini_r = r - r % n_sqrt;
+            int mini_c = c - c % n_sqrt;
+
+            for (int i = 0; i < n; ++i) {
+                if (grid[i][c] == 0)
+                    continue;
+                if (CHECK_BIT(mask, grid[i][c] - 1))
+                    UNSET_BIT(mask, grid[i][c] - 1);
+                else
+                    return false;
+            }
+
+            mask = N_ONES;
+            for (int i = 0; i < n; ++i) {
+                if (grid[r][i] == 0)
+                    continue;
+                if (CHECK_BIT(mask, grid[r][i] - 1))
+                    UNSET_BIT(mask, grid[r][i] - 1);
+                else
+                    return false;
+            }
+
+            mask = N_ONES;
+            for (int i = mini_r; i < mini_r + n_sqrt; ++i) {
+                for (int j = mini_c; j < mini_c + n_sqrt; ++j) {
+                    if (grid[i][j] == 0)
+                        continue;
+                    if (CHECK_BIT(mask, grid[i][j] - 1))
+                        UNSET_BIT(mask, grid[i][j] - 1);
+                    else
+                        return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+void thread_work(std::stack<uint32_t **>* stack) {
+
+    while (!terminate) {
+        uint32_t **board;
+        {
+            std::lock_guard<std::mutex> lg(stack_lock);
+            if (stack->empty())
+                return;
+            board = stack->top();
+            stack->pop();
+        }
+        // body
+        if (isValid(board) && solveSuduko(board, 0, 0)) {
+            terminate = true;
+            solution = board;
+        } else
+            destroyGrid(board);
+    }
+}
+
+
 int main(int argc, char **argv)
 {
     if (argc < 2)
         return 1;
 
     n = std::stoi(argv[1]);
+    int cores;
+
+    if (argc >= 3)
+        cores = std::stoi(argv[2]);
 
     if (n <= 0) return 1;
 
@@ -339,22 +459,43 @@ int main(int argc, char **argv)
     uint32_t **grid = createGrid();
     uint32_t **grid_new = createGrid();
     populateGrid(grid);
-
     clock_t start = clock();
+
     elimination(grid);
     while (!compareGrid(grid, grid_new)) {
         copyGrid(grid_new, grid);
         loneRanger(grid);
     }
 
-    auto ret = solveSuduko(grid, 0, 0);
+#ifdef MULTITHREAD
+    std::stack<uint32_t **> stack;
+    prepareStack(grid, stack);
 
+    std::thread threads[cores];
+    for (int i = 0; i < cores; ++i) {
+        threads[i] = std::thread(thread_work, &stack);
+    }
+
+    for (int i = 0; i < cores; ++i) {
+        if (threads[i].joinable())
+            threads[i].join();
+    }
+#else
+    auto ret = solveSuduko(grid, 0, 0);
+#endif
     clock_t end  = clock();
 
+#ifdef MULTITHREAD
+    if (solution == NULL)
+        std::cout << "No solution";
+    else
+        print(solution);
+    destroyGrid(solution);
+#else
     if (!ret)
         std::cout << "no solution  exists " << std::endl;
-
     print(grid);
+#endif
     destroyGrid(grid);
     destroyGrid(grid_new);
 
