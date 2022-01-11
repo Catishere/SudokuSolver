@@ -11,6 +11,7 @@
 #include <cstring>
 #include <iomanip>
 
+#define OPTIMIZED 1
 #define MULTITHREAD 1
 #define SET_BIT(mask, n) if (n != 0) mask |= 1UL << (n - 1)
 #define UNSET_BIT(mask, n) (mask &= ~(1UL << (n)))
@@ -417,6 +418,7 @@ bool isValid(uint32_t **grid)
 
 void thread_work(std::stack<uint32_t **>* stack) {
 
+    uint32_t **grid_new = createGrid();
     while (!terminate) {
         uint32_t **board;
         {
@@ -427,7 +429,20 @@ void thread_work(std::stack<uint32_t **>* stack) {
             stack->pop();
         }
         // body
-        if (isValid(board) && solveSuduko(board, 0, 0)) {
+        if (!isValid(board))
+        {
+            destroyGrid(board);
+            continue;
+        }
+
+#ifdef OPTIMIZED
+    if (n < 16) elimination(board);
+    while (!compareGrid(board, grid_new)) {
+        copyGrid(grid_new, board);
+        loneRanger(board);
+    }
+#endif
+        if (solveSuduko(board, 0, 0)) {
             terminate = true;
             solution = board;
         } else
@@ -490,9 +505,10 @@ int main(int argc, char **argv)
 #ifdef MULTITHREAD
     if (solution == NULL)
         std::cout << "No solution";
-    else
+    else {
         print(solution);
-    destroyGrid(solution);
+        destroyGrid(solution);
+    }
 #else
     if (!ret)
         std::cout << "no solution  exists " << std::endl;
